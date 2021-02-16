@@ -1,4 +1,5 @@
 pub mod room;
+pub mod tts;
 
 use serenity::{
     client::Context,

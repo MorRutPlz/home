@@ -9,21 +9,21 @@ pub struct RoomsVec {
 
 #[derive(Deserialize, Serialize)]
 pub struct RoomInfo {
-    pub user_id: u64,
+    pub user_id: Vec<u64>,
     pub channel_id: u64,
     pub role_id: u64,
 }
 
 impl Into<HashMap<UserId, (ChannelId, RoleId)>> for RoomsVec {
     fn into(self) -> HashMap<UserId, (ChannelId, RoleId)> {
-        self.room
-            .into_iter()
-            .map(|x| {
-                (
-                    UserId(x.user_id),
-                    (ChannelId(x.channel_id), RoleId(x.role_id)),
-                )
-            })
-            .collect::<HashMap<_, _>>()
+        let mut items = Vec::new();
+
+        self.room.into_iter().for_each(|x| {
+            x.user_id.clone().into_iter().for_each(|id| {
+                items.push((UserId(id), (ChannelId(x.channel_id), RoleId(x.role_id))))
+            });
+        });
+
+        items.into_iter().collect()
     }
 }

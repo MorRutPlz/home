@@ -1,6 +1,8 @@
 mod commands;
 mod config;
+mod logger;
 mod rooms;
+mod tts;
 
 use serenity::{
     async_trait,
@@ -10,8 +12,12 @@ use serenity::{
 };
 
 use crate::commands::room::*;
+use crate::commands::tts::*;
 use crate::commands::*;
-use crate::config::Config;
+use crate::config::{Config, Discord, Google};
+use crate::logger::info;
+use crate::tts::LastTTS;
+use songbird::SerenityInit;
 use std::fs;
 use std::io::ErrorKind;
 
@@ -27,11 +33,15 @@ impl EventHandler for Handler {
         let status = OnlineStatus::Online;
 
         ctx.set_presence(Some(activity), status).await;
+
+        info("Bot started! <3");
     }
 }
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     let config = match fs::read_to_string("config.toml") {
         Ok(n) => match toml::from_str::<Config>(&n) {
             Ok(n) => n,
@@ -40,9 +50,16 @@ async fn main() {
         Err(e) => match e.kind() {
             ErrorKind::NotFound => {
                 let config = Config {
+                    guild_id: 806947535825403904,
                     public_channels: vec![],
                     status: "bunni is pog~".to_string(),
-                    token: "<your token here ig>".to_string(),
+                    discord: Discord {
+                        token: "".to_string(),
+                    },
+                    google: Google {
+                        access_token: "".to_string(),
+                        api_key: "".to_string(),
+                    },
                 };
 
                 fs::write("config.toml", toml::to_string_pretty(&config).unwrap()).unwrap();
@@ -62,7 +79,7 @@ async fn main() {
             ErrorKind::NotFound => {
                 let rooms = rooms::RoomsVec {
                     room: vec![rooms::RoomInfo {
-                        user_id: 0,
+                        user_id: vec![0],
                         channel_id: 0,
                         role_id: 0,
                     }],
@@ -79,19 +96,22 @@ async fn main() {
     let framework = StandardFramework::new()
         .configure(|c| c.with_whitespace(true).prefix("/"))
         .help(&MY_HELP)
-        .group(&ROOM_GROUP);
+        .group(&ROOM_GROUP)
+        .group(&TTS_GROUP);
 
-    let mut client = Client::builder(&config.token)
+    let mut client = Client::builder(&config.discord.token)
         .event_handler(Handler)
         .framework(framework)
+        .register_songbird()
         .await
         .expect("Error creating client");
 
     {
         let mut data = client.data.write().await;
 
-        data.insert::<RoomsTMK>(rooms.into());
         data.insert::<ConfigTMK>(config);
+        data.insert::<LastTTS>(None);
+        data.insert::<RoomsTMK>(rooms.into());
     }
 
     if let Err(why) = client.start().await {
