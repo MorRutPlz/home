@@ -5,23 +5,25 @@ use serenity::{
     utils::Colour,
 };
 
-use crate::commands::room::RoomsTMK;
+use crate::{error, typemap::TypeMapSharedCache};
 
 #[command]
 #[description = "Adds a user to your room"]
 #[usage = "<@mention user here>"]
-#[only_in("guild")]
 async fn add(ctx: &Context, msg: &Message) -> CommandResult {
     if msg.mentions.len() > 0 {
         let data = ctx.data.read().await;
-        let rooms = data.get::<RoomsTMK>().unwrap();
-        let role_id = rooms.get(&msg.author.id).unwrap().1;
+        let cache = data.get::<TypeMapSharedCache>().unwrap();
+        let role_id = cache
+            .get_user_room_map()
+            .get(&msg.author.id)
+            .unwrap()
+            .role_id;
 
-        let mut already_added = Vec::new();
-        let mut error = None;
-        let mut errors = Vec::new();
-        let mut success = Vec::new();
-        let mut not_added = Vec::new();
+        let mut already_added = String::new();
+        let mut errors = String::new();
+        let mut success = String::new();
+        let mut not_added = String::new();
 
         for user in msg.mentions.iter() {
             if user.id.0 == 807187286696787969 {
@@ -37,13 +39,14 @@ async fn add(ctx: &Context, msg: &Message) -> CommandResult {
                         .await
                     {
                         Ok(_) => {}
-                        Err(e) => println!("failed to send message: {}", e),
+                        Err(e) => error!("failed to send message: {}", e),
                     }
 
                     return Ok(());
                 }
 
-                not_added.push(user.tag());
+                not_added.push_str(&user.tag());
+                not_added.push_str("\n");
                 continue;
             }
 
@@ -60,13 +63,14 @@ async fn add(ctx: &Context, msg: &Message) -> CommandResult {
                         .await
                     {
                         Ok(_) => {}
-                        Err(e) => println!("failed to send message: {}", e),
+                        Err(e) => error!("failed to send message: {}", e),
                     }
 
                     return Ok(());
                 }
 
-                not_added.push(user.tag());
+                not_added.push_str(&user.tag());
+                not_added.push_str("\n");
                 continue;
             }
 
@@ -74,25 +78,25 @@ async fn add(ctx: &Context, msg: &Message) -> CommandResult {
                 .has_role(&ctx.http, msg.guild_id.unwrap(), role_id)
                 .await
             {
-                Ok(true) => already_added.push(user.tag()),
+                Ok(true) => already_added.push_str(&format!("{}\n", user.tag())),
                 Ok(false) => {
                     match ctx
                         .http
-                        .add_member_role(msg.guild_id.unwrap().0, user.id.0, role_id.0)
+                        .add_member_role(msg.guild_id.unwrap().0, user.id.0, role_id)
                         .await
                     {
-                        Ok(_) => success.push(user.tag()),
+                        Ok(_) => success.push_str(&format!("{}\n", user.tag())),
                         Err(e) => {
-                            println!("failed to add user to role: {}", e);
-                            errors.push(user.tag());
-                            error = Some(e.to_string());
+                            error!("failed to add user to role: {}", e);
+                            errors.push_str(&user.tag());
+                            errors.push_str("\n");
                         }
                     }
                 }
                 Err(e) => {
-                    println!("failed to check if user has role: {}", e);
-                    errors.push(user.tag());
-                    error = Some(e.to_string());
+                    error!("failed to check if user has role: {}", e);
+                    errors.push_str(&user.tag());
+                    errors.push_str("\n");
                 }
             }
         }
@@ -104,84 +108,19 @@ async fn add(ctx: &Context, msg: &Message) -> CommandResult {
                     e.title("Command Execution ⚙️");
 
                     if success.len() > 0 {
-                        e.field(
-                            "Successfully added:",
-                            {
-                                let mut result = String::new();
-
-                                for i in 0..success.len() {
-                                    result.push_str(&success[i]);
-
-                                    if i != success.len() - 1 {
-                                        result.push_str("\n");
-                                    }
-                                }
-
-                                result
-                            },
-                            false,
-                        );
+                        e.field("Successfully added:", success, false);
                     }
 
                     if already_added.len() > 0 {
-                        e.field(
-                            "Already in room:",
-                            {
-                                let mut result = String::new();
-
-                                for i in 0..already_added.len() {
-                                    result.push_str(&already_added[i]);
-
-                                    if i != already_added.len() - 1 {
-                                        result.push_str("\n");
-                                    }
-                                }
-
-                                result
-                            },
-                            false,
-                        );
+                        e.field("Already in room:", already_added, false);
                     }
 
                     if not_added.len() > 0 {
-                        e.field(
-                            "Not added:",
-                            {
-                                let mut result = String::new();
-
-                                for i in 0..not_added.len() {
-                                    result.push_str(&not_added[i]);
-
-                                    if i != not_added.len() - 1 {
-                                        result.push_str("\n");
-                                    }
-                                }
-
-                                result
-                            },
-                            false,
-                        );
+                        e.field("Not added:", not_added, false);
                     }
 
                     if errors.len() > 0 {
-                        e.field(
-                            "Failed to add:",
-                            {
-                                let mut result = String::new();
-
-                                for i in 0..errors.len() {
-                                    result.push_str(&errors[i]);
-
-                                    result.push_str("\n");
-                                }
-
-                                result.push_str("\n");
-                                result.push_str("**Error**: ");
-                                result.push_str(error.as_ref().unwrap());
-                                result
-                            },
-                            false,
-                        );
+                        e.field("Failed to add:", errors, false);
                     }
 
                     e.color(Colour(16748258))
@@ -190,7 +129,7 @@ async fn add(ctx: &Context, msg: &Message) -> CommandResult {
             .await
         {
             Ok(_) => {}
-            Err(e) => println!("failed to send message: {}", e),
+            Err(e) => error!("failed to send message: {}", e),
         }
     } else {
         match msg
@@ -206,7 +145,7 @@ async fn add(ctx: &Context, msg: &Message) -> CommandResult {
             .await
         {
             Ok(_) => {}
-            Err(e) => println!("failed to send message: {}", e),
+            Err(e) => error!("failed to send message: {}", e),
         }
     }
 

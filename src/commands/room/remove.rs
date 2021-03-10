@@ -5,17 +5,20 @@ use serenity::{
     utils::Colour,
 };
 
-use crate::room::RoomsTMK;
+use crate::{error, typemap::TypeMapSharedCache};
 
 #[command]
 #[description = "Removes a user from your room"]
 #[usage = "<@mention user here>"]
-#[only_in("guild")]
 async fn remove(ctx: &Context, msg: &Message) -> CommandResult {
     if msg.mentions.len() > 0 {
         let data = ctx.data.read().await;
-        let rooms = data.get::<RoomsTMK>().unwrap();
-        let role_id = rooms.get(&msg.author.id).unwrap().1;
+        let cache = data.get::<TypeMapSharedCache>().unwrap();
+        let role_id = cache
+            .get_user_room_map()
+            .get(&msg.author.id)
+            .unwrap()
+            .role_id;
 
         let mut error = None;
         let mut errors = Vec::new();
@@ -36,7 +39,7 @@ async fn remove(ctx: &Context, msg: &Message) -> CommandResult {
                         .await
                     {
                         Ok(_) => {}
-                        Err(e) => println!("failed to send message: {}", e),
+                        Err(e) => error!("failed to send message: {}", e),
                     }
 
                     return Ok(());
@@ -52,12 +55,12 @@ async fn remove(ctx: &Context, msg: &Message) -> CommandResult {
                 Ok(true) => {
                     match ctx
                         .http
-                        .remove_member_role(msg.guild_id.unwrap().0, user.id.0, role_id.0)
+                        .remove_member_role(msg.guild_id.unwrap().0, user.id.0, role_id)
                         .await
                     {
                         Ok(_) => success.push(user.tag()),
                         Err(e) => {
-                            println!("failed to remove user from role: {}", e);
+                            error!("failed to remove user from role: {}", e);
                             errors.push(user.tag());
                             error = Some(e.to_string());
                         }
@@ -65,7 +68,7 @@ async fn remove(ctx: &Context, msg: &Message) -> CommandResult {
                 }
                 Ok(false) => not_in_room.push(user.tag()),
                 Err(e) => {
-                    println!("failed to check if user has role: {}", e);
+                    error!("failed to check if user has role: {}", e);
                     errors.push(user.tag());
                     error = Some(e.to_string());
                 }
@@ -145,7 +148,7 @@ async fn remove(ctx: &Context, msg: &Message) -> CommandResult {
             .await
         {
             Ok(_) => {}
-            Err(e) => println!("failed to send message: {}", e),
+            Err(e) => error!("failed to send message: {}", e),
         }
     } else {
         match msg
@@ -161,7 +164,7 @@ async fn remove(ctx: &Context, msg: &Message) -> CommandResult {
             .await
         {
             Ok(_) => {}
-            Err(e) => println!("failed to send message: {}", e),
+            Err(e) => error!("failed to send message: {}", e),
         }
     }
 

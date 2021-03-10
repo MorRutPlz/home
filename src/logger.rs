@@ -1,32 +1,27 @@
-use log::{debug, error, info};
-
-#[cfg(debug_assertions)]
-pub fn _debug<T: Into<String>>(message: T) {
-    let message = message.into();
-
-    debug!(
-        target: "home",
-        "{}",
-        message,
-    );
+#[macro_export]
+macro_rules! debug {
+    ($($arg:tt)+) => (
+        log::log!(target: "home", log::Level::Debug, $($arg)+)
+    )
 }
 
-pub fn error<T: Into<String>>(message: T) {
-    let message = message.into();
-
-    error!(
-        target: "home",
-        "{}",
-        message,
-    );
+#[macro_export]
+macro_rules! error {
+    ($($arg:tt)+) => (
+        log::log!(target: "home", log::Level::Error, $($arg)+)
+    )
 }
 
-pub fn info<T: Into<String>>(message: T) {
-    let message = message.into();
+#[macro_export]
+macro_rules! warn {
+    ($($arg:tt)+) => (
+        log::log!(target: "home", log::Level::Warn, $($arg)+)
+    )
+}
 
-    info!(
-        target: "home",
-        "{}",
-        message,
-    );
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)+) => (
+        log::log!(target: "home", log::Level::Info, $($arg)+)
+    )
 }

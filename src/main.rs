@@ -1,42 +1,22 @@
 mod commands;
 mod config;
+mod handler;
 mod logger;
-mod rooms;
-mod tts;
+mod model;
+mod shared_cache;
+mod typemap;
 
-use serenity::{
-    async_trait,
-    client::{Client, Context, EventHandler},
-    framework::standard::StandardFramework,
-    model::prelude::{Activity, OnlineStatus, Ready},
-};
-
-use crate::commands::room::*;
-use crate::commands::tts::*;
-use crate::commands::*;
-use crate::config::{Config, Discord, Google};
-use crate::logger::info;
-use crate::tts::LastTTS;
-use songbird::SerenityInit;
+use mongodb::Client as MongoClient;
+use serenity::{client::Client, framework::standard::StandardFramework};
+use shared_cache::SharedCache;
 use std::fs;
 use std::io::ErrorKind;
+use typemap::{TypeMapConfig, TypeMapSharedCache};
 
-struct Handler;
-
-#[async_trait]
-impl EventHandler for Handler {
-    async fn ready(&self, ctx: Context, _: Ready) {
-        let data = ctx.data.read().await;
-        let config = data.get::<ConfigTMK>().unwrap();
-
-        let activity = Activity::playing(&config.status);
-        let status = OnlineStatus::Online;
-
-        ctx.set_presence(Some(activity), status).await;
-
-        info("Bot started! <3");
-    }
-}
+use crate::commands::*;
+use crate::commands::{me::*, room::*};
+use crate::config::{Config, Discord, MongoDB};
+use crate::handler::Handler;
 
 #[tokio::main]
 async fn main() {
@@ -50,16 +30,18 @@ async fn main() {
         Err(e) => match e.kind() {
             ErrorKind::NotFound => {
                 let config = Config {
-                    guild_id: 806947535825403904,
-                    public_channels: vec![],
-                    status: "bunni is pog~".to_string(),
                     discord: Discord {
                         token: "".to_string(),
                     },
-                    google: Google {
-                        access_token: "".to_string(),
-                        api_key: "".to_string(),
+                    guild_id: 806947535825403904,
+                    main_server: 806947535825403904,
+                    moderation_server: 818026699349688331,
+                    mongodb: MongoDB {
+                        connection_string: "".to_string(),
                     },
+                    public_channels: vec![],
+                    status: "bunni is pog~".to_string(),
+                    sudoers: vec![],
                 };
 
                 fs::write("config.toml", toml::to_string_pretty(&config).unwrap()).unwrap();
@@ -70,51 +52,34 @@ async fn main() {
         },
     };
 
-    let rooms = match fs::read_to_string("rooms.toml") {
-        Ok(n) => match toml::from_str::<rooms::RoomsVec>(&n) {
-            Ok(n) => n,
-            Err(e) => panic!("failed to parse rooms.toml: {}", e),
-        },
-        Err(e) => match e.kind() {
-            ErrorKind::NotFound => {
-                let rooms = rooms::RoomsVec {
-                    room: vec![rooms::RoomInfo {
-                        user_id: vec![0],
-                        channel_id: 0,
-                        role_id: 0,
-                    }],
-                };
-
-                fs::write("rooms.toml", toml::to_string_pretty(&rooms).unwrap()).unwrap();
-
-                rooms
-            }
-            _ => panic!("failed to read rooms.toml: {}", e),
-        },
-    };
+    let shared_cache = SharedCache::new(
+        MongoClient::with_uri_str(&config.mongodb.connection_string)
+            .await
+            .unwrap()
+            .database("home"),
+    )
+    .await;
 
     let framework = StandardFramework::new()
         .configure(|c| c.with_whitespace(true).prefix("/"))
         .help(&MY_HELP)
         .group(&ROOM_GROUP)
-        .group(&TTS_GROUP);
+        .group(&ME_GROUP);
 
     let mut client = Client::builder(&config.discord.token)
         .event_handler(Handler)
         .framework(framework)
-        .register_songbird()
         .await
         .expect("Error creating client");
 
     {
         let mut data = client.data.write().await;
 
-        data.insert::<ConfigTMK>(config);
-        data.insert::<LastTTS>(None);
-        data.insert::<RoomsTMK>(rooms.into());
+        data.insert::<TypeMapConfig>(config);
+        data.insert::<TypeMapSharedCache>(shared_cache);
     }
 
     if let Err(why) = client.start().await {
-        println!("An error occurred while running the client: {:?}", why);
+        error!("An error occurred while running the client: {:?}", why);
     }
 }

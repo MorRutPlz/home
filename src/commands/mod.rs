@@ -1,5 +1,5 @@
+pub mod me;
 pub mod room;
-pub mod tts;
 
 use serenity::{
     client::Context,
@@ -9,18 +9,84 @@ use serenity::{
         Args, CommandGroup, CommandOptions, CommandResult, HelpBehaviour, HelpOptions, Reason,
     },
     model::{channel::Message, id::UserId},
-    prelude::TypeMapKey,
     utils::Colour,
 };
 
 use std::collections::HashSet;
 
-use crate::config::Config;
+use crate::{error, typemap::TypeMapConfig};
 
-pub struct ConfigTMK;
+#[check]
+#[name = "ModServer"]
+async fn mod_server_check(
+    ctx: &Context,
+    msg: &Message,
+    _: &mut Args,
+    _: &CommandOptions,
+) -> Result<(), Reason> {
+    let data = ctx.data.read().await;
+    let config = data.get::<TypeMapConfig>().unwrap();
 
-impl TypeMapKey for ConfigTMK {
-    type Value = Config;
+    match msg.guild_id {
+        Some(n) => {
+            if n.0 == config.moderation_server {
+                return Ok(());
+            }
+        }
+        None => {}
+    }
+
+    match msg
+        .channel_id
+        .send_message(&ctx.http, |m| {
+            m.reference_message(msg).embed(|e| {
+                e.color(Colour(10038562));
+                e.description(
+                    "**Error**: You can't use these commands outside the moderation server!",
+                )
+            })
+        })
+        .await
+    {
+        Ok(_) => {}
+        Err(e) => error!("failed to send message: {}", e),
+    }
+
+    Err(Reason::User(
+        "This command is only meant for the moderation server!".to_string(),
+    ))
+}
+
+#[check]
+#[name = "Sudo"]
+async fn sudo_check(
+    ctx: &Context,
+    msg: &Message,
+    _: &mut Args,
+    _: &CommandOptions,
+) -> Result<(), Reason> {
+    let data = ctx.data.read().await;
+    let config = data.get::<TypeMapConfig>().unwrap();
+
+    if config.sudoers.contains(&msg.author.id.0) {
+        Ok(())
+    } else {
+        match msg
+            .channel_id
+            .send_message(&ctx.http, |m| {
+                m.reference_message(msg).embed(|e| {
+                    e.color(Colour(10038562));
+                    e.description("**Error**: You, good sir, aren't in the sudoers list")
+                })
+            })
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => error!("failed to send message: {}", e),
+        }
+
+        Err(Reason::User("User not a sudoer".to_string()))
+    }
 }
 
 #[check]
@@ -32,9 +98,24 @@ async fn channel_check(
     _: &CommandOptions,
 ) -> Result<(), Reason> {
     let data = ctx.data.read().await;
-    let config = data.get::<ConfigTMK>().unwrap();
+    let config = data.get::<TypeMapConfig>().unwrap();
 
     if config.public_channels.contains(&msg.channel_id.0) {
+        match msg.author.id.create_dm_channel(&ctx.http).await {
+            Ok(n) => {
+                match n
+                    .send_message(&ctx.http, |m| {
+                        m.content("You can't use commands in public channels!")
+                    })
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(e) => error!("failed to send message to user: {}", e),
+                }
+            }
+            Err(e) => error!("failed to create DM channel: {}", e),
+        }
+
         Err(Reason::User(
             "Can't execute commands in a public channel!".to_string(),
         ))
@@ -53,7 +134,7 @@ async fn my_help(
     owners: HashSet<UserId>,
 ) -> CommandResult {
     let data = ctx.data.read().await;
-    let config = data.get::<ConfigTMK>().unwrap();
+    let config = data.get::<TypeMapConfig>().unwrap();
 
     let help_options = HelpOptions {
         names: &["help"],
