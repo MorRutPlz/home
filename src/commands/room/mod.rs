@@ -1,63 +1,71 @@
 pub mod add;
 pub mod create;
-pub mod list;
 pub mod remove;
 
 use serenity::{
     client::Context,
-    framework::standard::{
-        macros::{check, group},
-        Args, CommandOptions, Reason,
+    model::{
+        id::GuildId,
+        interactions::{ApplicationCommandOptionType, Interaction},
     },
-    model::channel::Message,
-    utils::Colour,
 };
 
-use crate::commands::*;
-use crate::{
-    commands::room::{add::*, create::*, list::*, remove::*},
-    typemap::TypeMapSharedCache,
-};
-
-#[group]
-#[prefix = "room"]
-#[description = "Group of commands for room management."]
-#[summary = "Commands for room stuff"]
-#[commands(add, remove, list, create)]
-#[checks(Channel, Room)]
-struct Room;
-
-#[check]
-#[name = "Room"]
-async fn room_check(
-    ctx: &Context,
-    msg: &Message,
-    _: &mut Args,
-    _: &CommandOptions,
-) -> Result<(), Reason> {
-    let data = ctx.data.read().await;
-    let cache = data.get::<TypeMapSharedCache>().unwrap();
-
-    match cache.get_user_room_map().contains_key(&msg.author.id) {
-        true => Ok(()),
-        false => {
-            match msg
-                .channel_id
-                .send_message(&ctx.http, |m| {
-                    m.reference_message(msg).embed(|e| {
-                        e.color(Colour(10038562));
-                        e.description(
-                            "**Error**: You don't seem to be registered. Try leaving and rejoining the server or asking a mod to fix this",
-                        )
+pub async fn register(ctx: &Context, guild_id: GuildId, application_id: u64) {
+    Interaction::create_guild_application_command(&ctx.http, guild_id, application_id, |a| {
+        a.name("room")
+            .description("Subcommands for room management")
+            .create_interaction_option(|o| {
+                o.name("add")
+                    .description("Adds a user to your room")
+                    .kind(ApplicationCommandOptionType::SubCommand)
+                    .create_sub_option(|o| {
+                        o.name("user")
+                            .description("The user to be added")
+                            .kind(ApplicationCommandOptionType::User)
+                            .required(true)
                     })
-                })
-                .await
-            {
-                Ok(_) => {}
-                Err(e) => error!("failed to send message: {}", e),
-            }
+            })
+            .create_interaction_option(|o| {
+                o.name("remove")
+                    .description("Removes a user from your room")
+                    .kind(ApplicationCommandOptionType::SubCommand)
+                    .create_sub_option(|o| {
+                        o.name("user")
+                            .description("The user to be removed")
+                            .kind(ApplicationCommandOptionType::User)
+                            .required(true)
+                    })
+            })
+            .create_interaction_option(|o| {
+                o.name("create")
+                    .description("Creates a room for a user")
+                    .kind(ApplicationCommandOptionType::SubCommand)
+                    .create_sub_option(|o| {
+                        o.name("user")
+                            .description("The new owner of this room")
+                            .kind(ApplicationCommandOptionType::User)
+                            .required(true)
+                    })
+                    .create_sub_option(|o| {
+                        o.name("room_name")
+                            .description("The name of the room and the permission role")
+                            .kind(ApplicationCommandOptionType::String)
+                            .required(true)
+                    })
+            })
+    })
+    .await
+    .unwrap();
+}
 
-            Err(Reason::User("User not registered".to_string()))
-        }
+pub async fn execute(ctx: Context, interaction: Interaction) {
+    match interaction.data.as_ref().unwrap().options.get(0) {
+        Some(n) => match n.name.as_str() {
+            "add" => add::execute(ctx, interaction).await,
+            "create" => create::execute(ctx, interaction).await,
+            "remove" => remove::execute(ctx, interaction).await,
+            _ => {}
+        },
+        None => {}
     }
 }

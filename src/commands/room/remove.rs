@@ -1,172 +1,141 @@
 use serenity::{
+    builder::CreateEmbed,
     client::Context,
-    framework::standard::{macros::command, CommandResult},
-    model::channel::Message,
+    model::{
+        id::{RoleId, UserId},
+        interactions::{Interaction, InteractionResponseType},
+    },
     utils::Colour,
 };
 
 use crate::{error, typemap::TypeMapSharedCache};
 
-#[command]
-#[description = "Removes a user from your room"]
-#[usage = "<@mention user here>"]
-async fn remove(ctx: &Context, msg: &Message) -> CommandResult {
-    if msg.mentions.len() > 0 {
-        let data = ctx.data.read().await;
-        let cache = data.get::<TypeMapSharedCache>().unwrap();
-        let role_id = cache
-            .get_user_room_map()
-            .get(&msg.author.id)
-            .unwrap()
-            .role_id;
+pub async fn execute(ctx: Context, interaction: Interaction) {
+    let data = ctx.data.read().await;
+    let cache = data.get::<TypeMapSharedCache>().unwrap();
 
-        let mut error = None;
-        let mut errors = Vec::new();
-        let mut not_in_room = Vec::new();
-        let mut success = Vec::new();
-
-        for user in msg.mentions.iter() {
-            if user.id.0 == 807187286696787969 {
-                if msg.mentions.len() == 1 {
-                    match msg
-                        .channel_id
-                        .send_message(&ctx.http, |m| {
-                            m.reference_message(msg).embed(|e| {
-                                e.color(Colour(10038562));
-                                e.description("**Error**: Stop ;-;")
-                            })
-                        })
-                        .await
-                    {
-                        Ok(_) => {}
-                        Err(e) => error!("failed to send message: {}", e),
-                    }
-
-                    return Ok(());
-                }
-
-                continue;
-            }
-
-            match user
-                .has_role(&ctx.http, msg.guild_id.unwrap(), role_id)
+    let rooms = match cache.get_user_room_map().get(&interaction.member.user.id) {
+        Some(n) => n.clone(),
+        None => {
+            match interaction
+                .create_interaction_response(&ctx.http, |m| {
+                    m.kind(InteractionResponseType::ChannelMessageWithSource).interaction_response_data(|d| d.embed(|e| {
+                        e.colour(Colour(10038562));
+                        e.description(
+                            "**Error**: You don't have any rooms! Try leaving the server and rejoining or consulting this with a mod",
+                        )
+                    }))
+                })
                 .await
             {
-                Ok(true) => {
-                    match ctx
-                        .http
-                        .remove_member_role(msg.guild_id.unwrap().0, user.id.0, role_id)
-                        .await
-                    {
-                        Ok(_) => success.push(user.tag()),
-                        Err(e) => {
-                            error!("failed to remove user from role: {}", e);
-                            errors.push(user.tag());
-                            error = Some(e.to_string());
+                Ok(_) => {}
+                Err(e) => error!("failed to create interaction response: {}", e),
+            }
+
+            return;
+        }
+    };
+
+    drop(cache);
+
+    let to_be_removed = UserId(
+        interaction
+            .data
+            .as_ref()
+            .unwrap()
+            .options
+            .get(0)
+            .unwrap()
+            .options
+            .get(0)
+            .unwrap()
+            .value
+            .as_ref()
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap(),
+    );
+
+    let mut embed = CreateEmbed::default();
+
+    // Don't let them remove the Home bot or themselves
+    if to_be_removed.0 != ctx.http.get_current_user().await.unwrap().id.0
+        && to_be_removed != interaction.member.user.id
+    {
+        // TODO: Support for multiple rooms here
+        let room = &rooms[0];
+
+        // Get user
+        match ctx.http.get_user(to_be_removed.0).await {
+            Ok(user) => {
+                match user
+                    .has_role(&ctx.http, interaction.guild_id, RoleId(room.role_id))
+                    .await
+                {
+                    Ok(true) => {
+                        match ctx
+                            .http
+                            .remove_member_role(
+                                interaction.guild_id.0,
+                                to_be_removed.0,
+                                room.role_id,
+                            )
+                            .await
+                        {
+                            Ok(_) => {
+                                embed
+                                    .color(Colour(16748258))
+                                    .description("Removed user from room ;-;");
+                            }
+                            Err(e) => {
+                                error!("failed to remove role from user: {}", e);
+
+                                embed.color(Colour(10038562)).description(format!(
+                                    "**Error**: Failed to remove role from user: {}",
+                                    e
+                                ));
+                            }
                         }
                     }
-                }
-                Ok(false) => not_in_room.push(user.tag()),
-                Err(e) => {
-                    error!("failed to check if user has role: {}", e);
-                    errors.push(user.tag());
-                    error = Some(e.to_string());
+                    Ok(false) => {
+                        embed
+                            .color(Colour(10038562))
+                            .description("That user is not added to your room!");
+                    }
+                    Err(e) => {
+                        error!("failed to check if user has role: {}", e);
+
+                        embed.color(Colour(10038562)).description(format!(
+                            "**Error**: Failed to check if user already has role: {}",
+                            e
+                        ));
+                    }
                 }
             }
-        }
+            Err(e) => {
+                error!("failed to get user from user id: {}", e);
 
-        match msg
-            .channel_id
-            .send_message(&ctx.http, |m| {
-                m.reference_message(msg).embed(|e| {
-                    e.title("Command Execution ⚙️");
-
-                    if success.len() > 0 {
-                        e.field(
-                            "Successfully removed:",
-                            {
-                                let mut result = String::new();
-
-                                for i in 0..success.len() {
-                                    result.push_str(&success[i]);
-
-                                    if i != success.len() - 1 {
-                                        result.push_str("\n");
-                                    }
-                                }
-
-                                result
-                            },
-                            false,
-                        );
-                    }
-
-                    if not_in_room.len() > 0 {
-                        e.field(
-                            "Wasn't in the room in the first place:",
-                            {
-                                let mut result = String::new();
-
-                                for i in 0..not_in_room.len() {
-                                    result.push_str(&not_in_room[i]);
-
-                                    if i != not_in_room.len() - 1 {
-                                        result.push_str("\n");
-                                    }
-                                }
-
-                                result
-                            },
-                            false,
-                        );
-                    }
-
-                    if errors.len() > 0 {
-                        e.field(
-                            "Failed to add:",
-                            {
-                                let mut result = String::new();
-
-                                for i in 0..errors.len() {
-                                    result.push_str(&errors[i]);
-
-                                    result.push_str("\n");
-                                }
-
-                                result.push_str("\n");
-                                result.push_str("**Error**: ");
-                                result.push_str(error.as_ref().unwrap());
-                                result
-                            },
-                            false,
-                        );
-                    }
-
-                    e.color(Colour(16748258))
-                })
-            })
-            .await
-        {
-            Ok(_) => {}
-            Err(e) => error!("failed to send message: {}", e),
+                embed
+                    .color(Colour(10038562))
+                    .description(format!("**Error**: Failed to get user object: {}", e));
+            }
         }
     } else {
-        match msg
-            .channel_id
-            .send_message(&ctx.http, |m| {
-                m.reference_message(msg).embed(|e| {
-                    e.color(Colour(10038562));
-                    e.description(
-                        "**Error**: You need to tag a user! Do ``/help room remove`` for more info.",
-                    )
-                })
-            })
-            .await
-        {
-            Ok(_) => {}
-            Err(e) => error!("failed to send message: {}", e),
-        }
+        embed
+            .color(Colour(10038562))
+            .description("**Error**: Stop ;-;");
     }
 
-    Ok(())
+    match interaction
+        .create_interaction_response(&ctx.http, |m| {
+            m.kind(InteractionResponseType::ChannelMessageWithSource)
+                .interaction_response_data(|d| d.set_embed(embed))
+        })
+        .await
+    {
+        Ok(_) => {}
+        Err(e) => error!("failed to create interaction response: {}", e),
+    }
 }

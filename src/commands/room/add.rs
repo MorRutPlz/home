@@ -1,153 +1,137 @@
 use serenity::{
+    builder::CreateEmbed,
     client::Context,
-    framework::standard::{macros::command, CommandResult},
-    model::channel::Message,
+    model::{
+        id::{RoleId, UserId},
+        interactions::{Interaction, InteractionResponseType},
+    },
     utils::Colour,
 };
 
 use crate::{error, typemap::TypeMapSharedCache};
 
-#[command]
-#[description = "Adds a user to your room"]
-#[usage = "<@mention user here>"]
-async fn add(ctx: &Context, msg: &Message) -> CommandResult {
-    if msg.mentions.len() > 0 {
-        let data = ctx.data.read().await;
-        let cache = data.get::<TypeMapSharedCache>().unwrap();
-        let role_id = cache
-            .get_user_room_map()
-            .get(&msg.author.id)
-            .unwrap()
-            .role_id;
+pub async fn execute(ctx: Context, interaction: Interaction) {
+    let data = ctx.data.read().await;
+    let cache = data.get::<TypeMapSharedCache>().unwrap();
 
-        let mut already_added = String::new();
-        let mut errors = String::new();
-        let mut success = String::new();
-        let mut not_added = String::new();
-
-        for user in msg.mentions.iter() {
-            if user.id.0 == 807187286696787969 {
-                if msg.mentions.len() == 1 {
-                    match msg
-                        .channel_id
-                        .send_message(&ctx.http, |m| {
-                            m.reference_message(msg).embed(|e| {
-                                e.color(Colour(10038562));
-                                e.description("**Error**: Stop ;-;")
-                            })
-                        })
-                        .await
-                    {
-                        Ok(_) => {}
-                        Err(e) => error!("failed to send message: {}", e),
-                    }
-
-                    return Ok(());
-                }
-
-                not_added.push_str(&user.tag());
-                not_added.push_str("\n");
-                continue;
-            }
-
-            if user.id == msg.author.id {
-                if msg.mentions.len() == 1 {
-                    match msg
-                        .channel_id
-                        .send_message(&ctx.http, |m| {
-                            m.reference_message(msg).embed(|e| {
-                                e.color(Colour(10038562));
-                                e.description("**Error**: You can't add yourself to your room!")
-                            })
-                        })
-                        .await
-                    {
-                        Ok(_) => {}
-                        Err(e) => error!("failed to send message: {}", e),
-                    }
-
-                    return Ok(());
-                }
-
-                not_added.push_str(&user.tag());
-                not_added.push_str("\n");
-                continue;
-            }
-
-            match user
-                .has_role(&ctx.http, msg.guild_id.unwrap(), role_id)
+    let rooms = match cache.get_user_room_map().get(&interaction.member.user.id) {
+        Some(n) => n.clone(),
+        None => {
+            match interaction
+                .create_interaction_response(&ctx.http, |m| {
+                    m.kind(InteractionResponseType::ChannelMessageWithSource).interaction_response_data(|d| d.embed(|e| {
+                        e.colour(Colour(10038562));
+                        e.description(
+                            "**Error**: You don't have any rooms! Try leaving the server and rejoining or consulting this with a mod",
+                        )
+                    }))
+                })
                 .await
             {
-                Ok(true) => already_added.push_str(&format!("{}\n", user.tag())),
-                Ok(false) => {
-                    match ctx
-                        .http
-                        .add_member_role(msg.guild_id.unwrap().0, user.id.0, role_id)
-                        .await
-                    {
-                        Ok(_) => success.push_str(&format!("{}\n", user.tag())),
-                        Err(e) => {
-                            error!("failed to add user to role: {}", e);
-                            errors.push_str(&user.tag());
-                            errors.push_str("\n");
+                Ok(_) => {}
+                Err(e) => error!("failed to create interaction response: {}", e),
+            }
+
+            return;
+        }
+    };
+
+    drop(cache);
+
+    let to_be_added = UserId(
+        interaction
+            .data
+            .as_ref()
+            .unwrap()
+            .options
+            .get(0)
+            .unwrap()
+            .options
+            .get(0)
+            .unwrap()
+            .value
+            .as_ref()
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap(),
+    );
+
+    let mut embed = CreateEmbed::default();
+
+    // Don't let them add the Home bot or themselves in a room
+    if to_be_added.0 != ctx.http.get_current_user().await.unwrap().id.0
+        && to_be_added != interaction.member.user.id
+    {
+        // TODO: Support for multiple rooms here
+        let room = &rooms[0];
+
+        // Get user
+        match ctx.http.get_user(to_be_added.0).await {
+            Ok(user) => {
+                match user
+                    .has_role(&ctx.http, interaction.guild_id, RoleId(room.role_id))
+                    .await
+                {
+                    Ok(true) => {
+                        embed
+                            .color(Colour(16748258))
+                            .description("Already added that user to your room!");
+                    }
+                    Ok(false) => {
+                        match ctx
+                            .http
+                            .add_member_role(interaction.guild_id.0, to_be_added.0, room.role_id)
+                            .await
+                        {
+                            Ok(_) => {
+                                embed
+                                    .color(Colour(16748258))
+                                    .description("Added user to room :3");
+                            }
+                            Err(e) => {
+                                error!("failed to add user to role: {}", e);
+
+                                embed.color(Colour(10038562)).description(format!(
+                                    "**Error**: Failed to add user to role: {}",
+                                    e
+                                ));
+                            }
                         }
                     }
-                }
-                Err(e) => {
-                    error!("failed to check if user has role: {}", e);
-                    errors.push_str(&user.tag());
-                    errors.push_str("\n");
+                    Err(e) => {
+                        error!("failed to check if user has role: {}", e);
+
+                        embed.color(Colour(10038562)).description(format!(
+                            "**Error**: Failed to check if user already has role: {}",
+                            e
+                        ));
+                    }
                 }
             }
-        }
+            Err(e) => {
+                error!("failed to get user from user id: {}", e);
 
-        match msg
-            .channel_id
-            .send_message(&ctx.http, |m| {
-                m.reference_message(msg).embed(|e| {
-                    e.title("Command Execution ⚙️");
-
-                    if success.len() > 0 {
-                        e.field("Successfully added:", success, false);
-                    }
-
-                    if already_added.len() > 0 {
-                        e.field("Already in room:", already_added, false);
-                    }
-
-                    if not_added.len() > 0 {
-                        e.field("Not added:", not_added, false);
-                    }
-
-                    if errors.len() > 0 {
-                        e.field("Failed to add:", errors, false);
-                    }
-
-                    e.color(Colour(16748258))
-                })
-            })
-            .await
-        {
-            Ok(_) => {}
-            Err(e) => error!("failed to send message: {}", e),
+                embed
+                    .color(Colour(10038562))
+                    .description(format!("**Error**: Failed to get user object: {}", e));
+            }
         }
     } else {
-        match msg
-            .channel_id
-            .send_message(&ctx.http, |m| {
-                m.reference_message(msg).embed(|e| {
-                    e.color(Colour(10038562));
-                    e.description(
-                        "**Error**: You need to tag a user! Do ``/help room add`` for more info.",
-                    )
-                })
-            })
-            .await
-        {
-            Ok(_) => {}
-            Err(e) => error!("failed to send message: {}", e),
-        }
+        embed
+            .color(Colour(10038562))
+            .description("**Error**: Stop ;-;");
     }
 
-    Ok(())
+    match interaction
+        .create_interaction_response(&ctx.http, |m| {
+            m.kind(InteractionResponseType::ChannelMessageWithSource)
+                .interaction_response_data(|d| d.set_embed(embed))
+        })
+        .await
+    {
+        Ok(_) => {}
+        Err(e) => error!("failed to create interaction response: {}", e),
+    }
 }

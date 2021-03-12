@@ -3,7 +3,7 @@ use serde::{
     Deserialize,
 };
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, PartialEq, Eq)]
 pub struct RoomInfo {
     #[serde(rename = "a")]
     pub owner: u64,

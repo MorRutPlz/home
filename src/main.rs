@@ -7,14 +7,12 @@ mod shared_cache;
 mod typemap;
 
 use mongodb::Client as MongoClient;
-use serenity::{client::Client, framework::standard::StandardFramework};
+use serenity::client::Client;
 use shared_cache::SharedCache;
 use std::fs;
 use std::io::ErrorKind;
 use typemap::{TypeMapConfig, TypeMapSharedCache};
 
-use crate::commands::*;
-use crate::commands::{me::*, room::*};
 use crate::config::{Config, Discord, MongoDB};
 use crate::handler::Handler;
 
@@ -60,15 +58,8 @@ async fn main() {
     )
     .await;
 
-    let framework = StandardFramework::new()
-        .configure(|c| c.with_whitespace(true).prefix("/"))
-        .help(&MY_HELP)
-        .group(&ROOM_GROUP)
-        .group(&ME_GROUP);
-
     let mut client = Client::builder(&config.discord.token)
         .event_handler(Handler)
-        .framework(framework)
         .await
         .expect("Error creating client");
 

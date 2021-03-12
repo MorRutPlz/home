@@ -3,18 +3,21 @@ use serenity::{
     client::{Context, EventHandler},
     model::{
         id::{ChannelId, GuildId, MessageId},
+        interactions::Interaction,
         prelude::{Activity, OnlineStatus, Ready},
     },
 };
 
-use crate::info;
-use crate::typemap::TypeMapConfig;
+use crate::{commands::execute, typemap::TypeMapConfig};
+use crate::{commands::register_commands, info};
 
 pub struct Handler;
 
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, _: Ready) {
+        register_commands(&ctx).await;
+
         let data = ctx.data.read().await;
         let config = data.get::<TypeMapConfig>().unwrap();
 
@@ -24,6 +27,12 @@ impl EventHandler for Handler {
         ctx.set_presence(Some(activity), status).await;
 
         info!("Bot started! <3");
+    }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        if interaction.data.is_some() {
+            execute(ctx, interaction).await;
+        }
     }
 
     async fn message_delete(
