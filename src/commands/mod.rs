@@ -1,4 +1,5 @@
-pub mod room;
+mod minecraft;
+mod room;
 
 use serenity::{
     client::Context,
@@ -27,6 +28,7 @@ pub async fn register_commands(ctx: &Context) {
     .await
     .unwrap();
 
+    minecraft::register(ctx, guild_id, application_id).await;
     room::register(ctx, guild_id, application_id).await;
 }
 
@@ -48,6 +50,12 @@ pub async fn execute(ctx: Context, interaction: Interaction) {
                                     ``remove``",
                                         true,
                                     )
+                                    .field(
+                                        "Minecraft",
+                                        "Usage: ``/minecraft <subcommand>``\n\n\
+                                    ``link``",
+                                        true,
+                                    )
                             })
                         })
                 })
@@ -57,6 +65,7 @@ pub async fn execute(ctx: Context, interaction: Interaction) {
                 Err(e) => error!("failed to create interaction response for 'help': {}", e),
             }
         }
+        "minecraft" => minecraft::execute(ctx, interaction).await,
         "room" => room::execute(ctx, interaction).await,
         _ => {}
     }

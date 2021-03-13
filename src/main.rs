@@ -2,16 +2,18 @@ mod commands;
 mod config;
 mod handler;
 mod logger;
+mod minecraft;
 mod model;
 mod shared_cache;
 mod typemap;
 
+use minecraft::start_listener;
 use mongodb::Client as MongoClient;
 use serenity::client::Client;
 use shared_cache::SharedCache;
 use std::fs;
 use std::io::ErrorKind;
-use typemap::{TypeMapConfig, TypeMapSharedCache};
+use typemap::{TypeMapConfig, TypeMapSharedCache, TypeMapVerificationCodes};
 
 use crate::config::{Config, Discord, MongoDB};
 use crate::handler::Handler;
@@ -63,11 +65,14 @@ async fn main() {
         .await
         .expect("Error creating client");
 
+    let codes = start_listener(client.cache_and_http.http.clone());
+
     {
         let mut data = client.data.write().await;
 
         data.insert::<TypeMapConfig>(config);
         data.insert::<TypeMapSharedCache>(shared_cache);
+        data.insert::<TypeMapVerificationCodes>(codes);
     }
 
     if let Err(why) = client.start().await {
