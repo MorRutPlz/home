@@ -2,6 +2,7 @@ use serenity::{
     async_trait,
     client::{Context, EventHandler},
     model::{
+        event::TypingStartEvent,
         id::{ChannelId, GuildId, MessageId},
         interactions::Interaction,
         prelude::{Activity, OnlineStatus, Ready},
@@ -32,6 +33,18 @@ impl EventHandler for Handler {
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if interaction.data.is_some() {
             execute(ctx, interaction).await;
+        }
+    }
+
+    async fn typing_start(&self, ctx: Context, e: TypingStartEvent) {
+        match e.guild_id {
+            Some(n) => {
+                let data = ctx.data.read().await;
+                let config = data.get::<TypeMapConfig>().unwrap();
+
+                if n.0 == config.main_server {}
+            }
+            None => {}
         }
     }
 

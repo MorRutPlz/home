@@ -1,16 +1,15 @@
 use serde::{
-    ser::{Serialize, SerializeStruct, Serializer},
-    Deserialize,
+    ser::{SerializeStruct, Serializer},
+    Deserialize, Serialize,
 };
+use serenity::model::id::{ChannelId, UserId};
 
 #[derive(Clone, Deserialize, PartialEq, Eq)]
 pub struct RoomInfo {
     #[serde(rename = "a")]
-    pub owner: u64,
+    pub owner: UserId,
     #[serde(rename = "b")]
-    pub channel_id: u64,
-    #[serde(rename = "c")]
-    pub role_id: u64,
+    pub channel_ids: Vec<ChannelId>,
 }
 
 impl Serialize for RoomInfo {
@@ -19,9 +18,15 @@ impl Serialize for RoomInfo {
         S: Serializer,
     {
         let mut state = serializer.serialize_struct("RoomInfo", 3)?;
-        state.serialize_field("a", &(self.owner as i64))?;
-        state.serialize_field("b", &(self.channel_id as i64))?;
-        state.serialize_field("c", &(self.role_id as i64))?;
+        state.serialize_field("a", &(self.owner.0 as i64))?;
+        state.serialize_field(
+            "b",
+            &(self
+                .channel_ids
+                .iter()
+                .map(|x| x.0 as i64)
+                .collect::<Vec<_>>()),
+        )?;
         state.end()
     }
 }

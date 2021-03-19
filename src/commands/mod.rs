@@ -5,7 +5,9 @@ use serenity::{
     client::Context,
     model::{
         id::GuildId,
-        interactions::{Interaction, InteractionResponseType},
+        interactions::{
+            ApplicationCommandInteractionDataOption, Interaction, InteractionResponseType,
+        },
     },
     utils::Colour,
 };
@@ -69,4 +71,26 @@ pub async fn execute(ctx: Context, interaction: Interaction) {
         "room" => room::execute(ctx, interaction).await,
         _ => {}
     }
+}
+
+pub fn get_option(
+    index: usize,
+    interaction: &Interaction,
+) -> Option<&ApplicationCommandInteractionDataOption> {
+    interaction
+        .data
+        .as_ref()
+        .unwrap()
+        .options
+        .get(0)
+        .unwrap()
+        .options
+        .get(index)
+}
+
+pub async fn sudo_check(ctx: &Context, interaction: &Interaction) -> bool {
+    let data = ctx.data.read().await;
+    let config = data.get::<TypeMapConfig>().unwrap();
+
+    config.sudoers.contains(&interaction.member.user.id.0)
 }

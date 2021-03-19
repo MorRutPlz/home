@@ -1,5 +1,6 @@
 pub mod add;
 pub mod create;
+pub mod forceadd;
 pub mod remove;
 
 use serenity::{
@@ -24,16 +25,11 @@ pub async fn register(ctx: &Context, guild_id: GuildId, application_id: u64) {
                             .kind(ApplicationCommandOptionType::User)
                             .required(true)
                     })
-            })
-            .create_interaction_option(|o| {
-                o.name("remove")
-                    .description("Removes a user from your room")
-                    .kind(ApplicationCommandOptionType::SubCommand)
                     .create_sub_option(|o| {
-                        o.name("user")
-                            .description("The user to be removed")
-                            .kind(ApplicationCommandOptionType::User)
-                            .required(true)
+                        o.name("room")
+                            .description("Specify the room if you have multiple")
+                            .kind(ApplicationCommandOptionType::Channel)
+                            .required(false)
                     })
             })
             .create_interaction_option(|o| {
@@ -53,6 +49,40 @@ pub async fn register(ctx: &Context, guild_id: GuildId, application_id: u64) {
                             .required(true)
                     })
             })
+            .create_interaction_option(|o| {
+                o.name("forceadd")
+                    .description("SUDO - Adds a user to a channel")
+                    .kind(ApplicationCommandOptionType::SubCommand)
+                    .create_sub_option(|o| {
+                        o.name("room")
+                            .description("The channel to add the user to")
+                            .kind(ApplicationCommandOptionType::Channel)
+                            .required(true)
+                    })
+                    .create_sub_option(|o| {
+                        o.name("user")
+                            .description("The user to be added")
+                            .kind(ApplicationCommandOptionType::User)
+                            .required(true)
+                    })
+            })
+            .create_interaction_option(|o| {
+                o.name("remove")
+                    .description("Removes a user from your room")
+                    .kind(ApplicationCommandOptionType::SubCommand)
+                    .create_sub_option(|o| {
+                        o.name("user")
+                            .description("The user to be removed")
+                            .kind(ApplicationCommandOptionType::User)
+                            .required(true)
+                    })
+                    .create_sub_option(|o| {
+                        o.name("room")
+                            .description("Specify the room if you have multiple")
+                            .kind(ApplicationCommandOptionType::Channel)
+                            .required(false)
+                    })
+            })
     })
     .await
     .unwrap();
@@ -63,6 +93,7 @@ pub async fn execute(ctx: Context, interaction: Interaction) {
         Some(n) => match n.name.as_str() {
             "add" => add::execute(ctx, interaction).await,
             "create" => create::execute(ctx, interaction).await,
+            "forceadd" => forceadd::execute(ctx, interaction).await,
             "remove" => remove::execute(ctx, interaction).await,
             _ => {}
         },

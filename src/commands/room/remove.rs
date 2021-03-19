@@ -2,13 +2,14 @@ use serenity::{
     builder::CreateEmbed,
     client::Context,
     model::{
-        id::{RoleId, UserId},
+        channel::{Channel, PermissionOverwriteType},
+        id::{ChannelId, UserId},
         interactions::{Interaction, InteractionResponseType},
     },
     utils::Colour,
 };
 
-use crate::{error, typemap::TypeMapSharedCache};
+use crate::{commands::get_option, error, typemap::TypeMapSharedCache};
 
 pub async fn execute(ctx: Context, interaction: Interaction) {
     let data = ctx.data.read().await;
@@ -38,88 +39,147 @@ pub async fn execute(ctx: Context, interaction: Interaction) {
 
     drop(cache);
 
-    let to_be_removed = UserId(
-        interaction
-            .data
-            .as_ref()
-            .unwrap()
-            .options
-            .get(0)
-            .unwrap()
-            .options
-            .get(0)
-            .unwrap()
-            .value
-            .as_ref()
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .parse()
-            .unwrap(),
-    );
+    let to_be_removed = match get_option(0, &interaction) {
+        Some(n) => match n.value.as_ref() {
+            Some(n) => match n.as_str() {
+                Some(n) => match n.parse() {
+                    Ok(n) => UserId(n),
+                    Err(_) => return,
+                },
+                None => return,
+            },
+            None => return,
+        },
+        None => return,
+    };
+
+    let room = match get_option(1, &interaction) {
+        Some(n) => match n.value.as_ref() {
+            Some(n) => match n.as_str() {
+                Some(n) => match n.parse() {
+                    Ok(n) => {
+                        if rooms.contains(&ChannelId(n)) {
+                            Some(ChannelId(n))
+                        } else {
+                            match interaction
+                                .create_interaction_response(&ctx.http, |m| {
+                                    m.kind(InteractionResponseType::ChannelMessageWithSource)
+                                        .interaction_response_data(|d| {
+                                            d.embed(|e| {
+                                                e.color(Colour(10038562)).description(format!(
+                                                    "**Error**: That channel is not one of your rooms!"
+                                                ))
+                                            })
+                                        })
+                                })
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => error!("failed to create interaction response: {}", e),
+                            }
+
+                            return;
+                        }
+                    }
+                    Err(_) => return,
+                },
+                None => return,
+            },
+            None => return,
+        },
+        None => {
+            if rooms.len() > 1 {
+                let msg = format!(
+                    "**Error**: Since you have multiple rooms, you have to specify a room!"
+                );
+
+                match interaction
+                    .create_interaction_response(&ctx.http, |m| {
+                        m.kind(InteractionResponseType::ChannelMessageWithSource)
+                            .interaction_response_data(|d| {
+                                d.embed(|e| e.color(Colour(10038562)).description(msg))
+                            })
+                    })
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(e) => error!("failed to create interaction response: {}", e),
+                }
+
+                return;
+            }
+
+            None
+        }
+    };
 
     let mut embed = CreateEmbed::default();
 
-    // Don't let them remove the Home bot or themselves
-    if to_be_removed.0 != ctx.http.get_current_user().await.unwrap().id.0
-        && to_be_removed != interaction.member.user.id
-    {
-        // TODO: Support for multiple rooms here
-        let room = &rooms[0];
+    // Don't let them remove themselves
+    if to_be_removed != interaction.member.user.id {
+        let room = match room {
+            Some(n) => n,
+            None => rooms[0],
+        };
 
-        // Get user
-        match ctx.http.get_user(to_be_removed.0).await {
-            Ok(user) => {
-                match user
-                    .has_role(&ctx.http, interaction.guild_id, RoleId(room.role_id))
-                    .await
-                {
-                    Ok(true) => {
-                        match ctx
-                            .http
-                            .remove_member_role(
-                                interaction.guild_id.0,
-                                to_be_removed.0,
-                                room.role_id,
-                            )
-                            .await
-                        {
-                            Ok(_) => {
-                                embed
-                                    .color(Colour(16748258))
-                                    .description("Removed user from room ;-;");
-                            }
-                            Err(e) => {
-                                error!("failed to remove role from user: {}", e);
-
-                                embed.color(Colour(10038562)).description(format!(
-                                    "**Error**: Failed to remove role from user: {}",
-                                    e
-                                ));
+        match ctx.http.get_channel(room.0).await {
+            Ok(Channel::Guild(n)) => {
+                if n.permission_overwrites
+                    .iter()
+                    .filter(|x| match x.kind {
+                        PermissionOverwriteType::Member(n) => {
+                            if n == to_be_removed {
+                                true
+                            } else {
+                                false
                             }
                         }
-                    }
-                    Ok(false) => {
-                        embed
-                            .color(Colour(10038562))
-                            .description("That user is not added to your room!");
-                    }
-                    Err(e) => {
-                        error!("failed to check if user has role: {}", e);
+                        _ => false,
+                    })
+                    .collect::<Vec<_>>()
+                    .len()
+                    != 0
+                {
+                    match n
+                        .delete_permission(
+                            &ctx.http,
+                            PermissionOverwriteType::Member(to_be_removed),
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            embed
+                                .color(Colour(16748258))
+                                .description("Removed user from room ;-;");
+                        }
+                        Err(e) => {
+                            error!("failed to remove user from channel: {}", e);
 
-                        embed.color(Colour(10038562)).description(format!(
-                            "**Error**: Failed to check if user already has role: {}",
-                            e
-                        ));
+                            embed.color(Colour(10038562)).description(format!(
+                                "**Error**: Failed to remove user from channel: {}",
+                                e
+                            ));
+                        }
                     }
+                } else {
+                    embed
+                        .color(Colour(10038562))
+                        .description(format!("**Error**: That user is not in your room!"));
                 }
             }
-            Err(e) => {
-                error!("failed to get user from user id: {}", e);
+            Ok(_) => {
+                error!("expected a guild channel");
 
                 embed
                     .color(Colour(10038562))
-                    .description(format!("**Error**: Failed to get user object: {}", e));
+                    .description(format!("**Error**: Expected a guild channel"));
+            }
+            Err(e) => {
+                error!("failed to get channel: {}", e);
+
+                embed
+                    .color(Colour(10038562))
+                    .description(format!("**Error**: Failed to get channel: {}", e));
             }
         }
     } else {
