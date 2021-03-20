@@ -9,7 +9,7 @@ mod typemap;
 
 use minecraft::start_listener;
 use mongodb::Client as MongoClient;
-use serenity::client::Client;
+use serenity::client::{bridge::gateway::GatewayIntents, Client};
 use shared_cache::SharedCache;
 use std::fs;
 use std::io::ErrorKind;
@@ -62,6 +62,7 @@ async fn main() {
 
     let mut client = Client::builder(&config.discord.token)
         .event_handler(Handler)
+        .intents(GatewayIntents::all())
         .await
         .expect("Error creating client");
 

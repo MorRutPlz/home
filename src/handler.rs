@@ -10,7 +10,7 @@ use serenity::{
     },
 };
 
-use crate::{commands::register_commands, error, info};
+use crate::{commands::register_commands, debug, error, info, typemap::TypeMapSharedCache};
 use crate::{
     commands::{execute, room::create::create_room},
     typemap::TypeMapConfig,
@@ -43,6 +43,20 @@ impl EventHandler for Handler {
     async fn guild_member_addition(&self, ctx: Context, guild_id: GuildId, new_member: Member) {
         if guild_id.0 != 806947535825403904 {
             return;
+        }
+
+        {
+            let data = ctx.data.read().await;
+            let config = data.get::<TypeMapSharedCache>().unwrap();
+
+            match config.get_user_room_map().get(&new_member.user.id) {
+                Some(n) => {
+                    if n.len() != 0 {
+                        return;
+                    }
+                }
+                None => {}
+            }
         }
 
         let mut room_name = new_member

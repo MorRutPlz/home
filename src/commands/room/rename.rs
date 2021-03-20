@@ -48,7 +48,7 @@ pub async fn execute(ctx: Context, interaction: Interaction) {
                         .collect::<String>();
 
                     if n.len() <= 83 && n.len() >= 1 {
-                        n
+                        format!("°•°♡{}-room♡°•°", n)
                     } else {
                         let msg = format!(
                             "**Error**: Room name has to be between 1 and 83 characters long!"
