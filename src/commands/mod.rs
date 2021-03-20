@@ -1,5 +1,5 @@
 mod minecraft;
-mod room;
+pub mod room;
 
 use serenity::{
     client::Context,

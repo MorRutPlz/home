@@ -1,7 +1,8 @@
-pub mod add;
+mod add;
 pub mod create;
-pub mod forceadd;
-pub mod remove;
+mod forceadd;
+mod remove;
+mod rename;
 
 use serenity::{
     client::Context,
@@ -83,6 +84,17 @@ pub async fn register(ctx: &Context, guild_id: GuildId, application_id: u64) {
                             .required(false)
                     })
             })
+            .create_interaction_option(|o| {
+                o.name("rename")
+                    .description("Rename your room (do this in your room)")
+                    .kind(ApplicationCommandOptionType::SubCommand)
+                    .create_sub_option(|o| {
+                        o.name("name")
+                            .description("The new name")
+                            .kind(ApplicationCommandOptionType::String)
+                            .required(true)
+                    })
+            })
     })
     .await
     .unwrap();
@@ -95,6 +107,7 @@ pub async fn execute(ctx: Context, interaction: Interaction) {
             "create" => create::execute(ctx, interaction).await,
             "forceadd" => forceadd::execute(ctx, interaction).await,
             "remove" => remove::execute(ctx, interaction).await,
+            "rename" => rename::execute(ctx, interaction).await,
             _ => {}
         },
         None => {}

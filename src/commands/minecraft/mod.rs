@@ -1,4 +1,4 @@
-pub mod link;
+mod link;
 
 use serenity::{
     client::Context,

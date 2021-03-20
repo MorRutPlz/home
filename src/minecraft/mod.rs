@@ -160,20 +160,17 @@ pub async fn handle_stream(
         }))
         .await?;
 
+    let msg = "ye ur verified congrats (this doesn't actually do anything as of rn so feel free to do this again)";
+
     match http.get_user(user.0).await {
         Ok(n) => match n.create_dm_channel(&http).await {
-            Ok(n) => {
-                match n
-                    .send_message(&http, |m| m.content("ye ur verified congrats (this doesn't actually do anything as of rn so feel free to do this again)"))
-                    .await
-                {
-                    Ok(_) => {}
-                    Err(e) => {}
-                }
-            }
-            Err(e) => {}
+            Ok(n) => match n.send_message(&http, |m| m.content(msg)).await {
+                Ok(_) => {}
+                Err(e) => error!("failed to send message: {}", e),
+            },
+            Err(e) => error!("failed to create DM channel: {}", e),
         },
-        Err(e) => {}
+        Err(e) => error!("failed to get user: {}", e),
     }
 
     Ok(())

@@ -122,7 +122,7 @@ pub async fn execute(ctx: Context, interaction: Interaction) {
             None => rooms[0],
         };
 
-        match ctx.http.get_channel(room.0).await {
+        match room.to_channel(&ctx.http).await {
             Ok(Channel::Guild(n)) => {
                 if n.permission_overwrites
                     .iter()

@@ -50,7 +50,7 @@ pub async fn execute(ctx: Context, interaction: Interaction) {
 
     let mut embed = CreateEmbed::default();
 
-    match ctx.http.get_channel(channel.0).await {
+    match channel.to_channel(&ctx.http).await {
         Ok(Channel::Guild(n)) => {
             if n.permission_overwrites
                 .iter()

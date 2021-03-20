@@ -3,14 +3,18 @@ use serenity::{
     client::{Context, EventHandler},
     model::{
         event::TypingStartEvent,
-        id::{ChannelId, GuildId, MessageId},
+        guild::Member,
+        id::{ChannelId, GuildId, MessageId, UserId},
         interactions::Interaction,
         prelude::{Activity, OnlineStatus, Ready},
     },
 };
 
-use crate::{commands::execute, typemap::TypeMapConfig};
-use crate::{commands::register_commands, info};
+use crate::{commands::register_commands, error, info};
+use crate::{
+    commands::{execute, room::create::create_room},
+    typemap::TypeMapConfig,
+};
 
 pub struct Handler;
 
@@ -33,6 +37,56 @@ impl EventHandler for Handler {
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if interaction.data.is_some() {
             execute(ctx, interaction).await;
+        }
+    }
+
+    async fn guild_member_addition(&self, ctx: Context, guild_id: GuildId, new_member: Member) {
+        if guild_id.0 != 806947535825403904 {
+            return;
+        }
+
+        let mut room_name = new_member
+            .user
+            .name
+            .chars()
+            .into_iter()
+            .filter(|x| x.is_alphanumeric())
+            .collect::<String>();
+
+        if room_name.len() > 83 {
+            room_name.truncate(83);
+        }
+
+        match create_room(&ctx, new_member.user.id, room_name).await {
+            Ok(_) => {}
+            Err(e) => {
+                let data = ctx.data.read().await;
+                let config = data.get::<TypeMapConfig>().unwrap();
+                let mut sudoers = config.sudoers.iter();
+
+                match new_member.user.create_dm_channel(&ctx.http).await {
+                    Ok(n) => match n.send_message(&ctx.http, |m| m.set_embed(e.clone())).await {
+                        Ok(_) => {}
+                        Err(e) => error!("failed to send message: {}", e),
+                    },
+                    Err(e) => error!("failed to create DM channel: {}", e),
+                }
+
+                loop {
+                    match sudoers.next() {
+                        Some(n) => match UserId(*n).create_dm_channel(&ctx.http).await {
+                            Ok(n) => {
+                                match n.send_message(&ctx.http, |m| m.set_embed(e.clone())).await {
+                                    Ok(_) => {}
+                                    Err(e) => error!("failed to send message: {}", e),
+                                }
+                            }
+                            Err(e) => error!("failed to create DM channel: {}", e),
+                        },
+                        None => break,
+                    }
+                }
+            }
         }
     }
 
